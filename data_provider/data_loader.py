@@ -89,6 +89,7 @@ class Dataset_ETT_hour(Dataset):
         self.data_x = data[border1:border2]
         self.data_y = data[border1:border2]
         self.data_stamp = data_stamp
+        self.cycle_index = (np.arange(len(data)) % self.cycle)[border1:border2]
 
     def __getitem__(self, index):
         s_begin = index
@@ -101,7 +102,9 @@ class Dataset_ETT_hour(Dataset):
         seq_x_mark = self.data_stamp[s_begin:s_end]
         seq_y_mark = self.data_stamp[r_begin:r_end]
 
-        return seq_x, seq_y, seq_x_mark, seq_y_mark
+        cycle_index = torch.tensor(self.cycle_index[s_end])
+
+        return seq_x, seq_y, seq_x_mark, seq_y_mark, cycle_index
 
     def __len__(self):
         return len(self.data_x) - self.seq_len - self.pred_len + 1
@@ -113,7 +116,7 @@ class Dataset_ETT_hour(Dataset):
 class Dataset_ETT_minute(Dataset):
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTm1.csv',
-                 target='OT', scale=True, timeenc=0, freq='t', seasonal_patterns=None):
+                 target='OT', scale=True, timeenc=0, freq='t',cycle = None, seasonal_patterns=None):
         # size [seq_len, label_len, pred_len]
         # info
         if size == None:
@@ -134,6 +137,7 @@ class Dataset_ETT_minute(Dataset):
         self.scale = scale
         self.timeenc = timeenc
         self.freq = freq
+        self.cycle = cycle
 
         self.root_path = root_path
         self.data_path = data_path
@@ -179,6 +183,7 @@ class Dataset_ETT_minute(Dataset):
         self.data_x = data[border1:border2]
         self.data_y = data[border1:border2]
         self.data_stamp = data_stamp
+        self.cycle_index = (np.arange(len(data)) % self.cycle)[border1:border2]
 
     def __getitem__(self, index):
         s_begin = index
@@ -190,8 +195,8 @@ class Dataset_ETT_minute(Dataset):
         seq_y = self.data_y[r_begin:r_end]
         seq_x_mark = self.data_stamp[s_begin:s_end]
         seq_y_mark = self.data_stamp[r_begin:r_end]
-
-        return seq_x, seq_y, seq_x_mark, seq_y_mark
+        cycle_index = torch.tensor(self.cycle_index[s_end])
+        return seq_x, seq_y, seq_x_mark, seq_y_mark,cycle_index
 
     def __len__(self):
         return len(self.data_x) - self.seq_len - self.pred_len + 1
@@ -277,6 +282,8 @@ class Dataset_Custom(Dataset):
         self.data_x = data[border1:border2]
         self.data_y = data[border1:border2]
         self.data_stamp = data_stamp
+        self.cycle_index = (np.arange(len(data)) % self.cycle)[border1:border2]
+
 
     def __getitem__(self, index):
         s_begin = index

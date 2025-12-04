@@ -69,6 +69,7 @@ if __name__ == '__main__':
                         help='time features encoding, options:[timeF, fixed, learned]')
     parser.add_argument('--activation', type=str, default='gelu', help='activation')
     parser.add_argument('--output_attention', action='store_true', help='whether to output attention in ecoder')
+    parser.add_argument('--cycle_len',type=int, default=96, help='cycle length for TimesNet')
 
     # optimization
     parser.add_argument('--num_workers', type=int, default=10, help='data loader num workers')
@@ -81,6 +82,8 @@ if __name__ == '__main__':
     parser.add_argument('--loss', type=str, default='MSE', help='loss function')
     parser.add_argument('--lradj', type=str, default='type1', help='adjust learning rate')
     parser.add_argument('--use_amp', action='store_true', help='use automatic mixed precision training', default=False)
+    parser.add_argument('--cycle', type=int, default=24, help='cycle length')
+    parser.add_argument('--output_proj_dropout', type=float, default=0.1, help='dropout for output projection')
 
     # GPU
     parser.add_argument('--use_gpu', type=bool, default=True, help='use gpu')

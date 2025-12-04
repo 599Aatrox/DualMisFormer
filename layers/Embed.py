@@ -172,3 +172,38 @@ class PatchEmbedding(nn.Module):
         # Input encoding
         x = self.value_embedding(x) + self.position_embedding(x)
         return self.dropout(x), n_vars
+class DataEmbedding_inverted(nn.Module):
+    def __init__(self, c_in, d_model, embed_type='fixed', freq='h', dropout=0.1):
+        """
+        初始化函数
+        参数:
+            c_in: 输入特征的维度
+            d_model: 模型的维度
+            embed_type: 嵌入类型，默认为'fixed'
+            freq: 频率，默认为'h'(小时)
+            dropout: dropout比率，默认为0.1
+        """
+        super(DataEmbedding_inverted, self).__init__()
+        self.value_embedding = nn.Linear(c_in, d_model)  # 线性层，将输入特征维度转换为模型维度
+        self.dropout = nn.Dropout(p=dropout)  # dropout层，用于防止过拟合
+
+    def forward(self, x, x_mark):
+
+        """
+        前向传播函数
+        参数:
+            x: 输入数据，形状为[Batch, Time, Variate]
+            x_mark: 时间标记，可选
+        返回:
+            经过嵌入和dropout处理后的张量
+        """
+        x = x.permute(0, 2, 1)  # 调整张量维度顺序，变为[Batch, Variate, Time]
+        # x: [Batch Variate Time]
+        if x_mark is None:
+            x = self.value_embedding(x)  # 如果没有时间标记，直接进行值嵌入
+        else:
+            # the potential to take covariates (e.g. timestamps) as tokens
+            # 如果有时间标记，将输入数据和时间标记拼接后进行嵌入
+            x = self.value_embedding(torch.cat([x, x_mark.permute(0, 2, 1)], 1))
+        # x: [Batch Variate d_model]
+        return self.dropout(x)  # 应用dropout并返回结果
