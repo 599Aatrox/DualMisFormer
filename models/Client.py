@@ -1,3 +1,5 @@
+import logging
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,7 +12,7 @@ from layers.Embed import DataEmbedding, DataEmbedding_inverted
 import numpy as np
 from layers.RevIN import RevIN
 
-
+logger = logging.getLogger(__name__)
 class Model(nn.Module):
 
     def __init__(self, configs):
@@ -64,6 +66,7 @@ class Model(nn.Module):
         self.Linear.add_module('Linear',nn.Linear(configs.seq_len, self.pred_len))
         self.w_dec = torch.nn.Parameter(torch.FloatTensor([configs.w_lin]*configs.enc_in),requires_grad=True)
         self.revin_layer = RevIN(configs.enc_in)
+        self.log_prem = True
 
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec,phase,
@@ -71,30 +74,38 @@ class Model(nn.Module):
 
         x_enc = self.revin_layer(x_enc, 'norm')#归一化
         B,L,N = x_enc.shape
-        print("B,L,N",B,L,N)
+
 
         # enc_out = x_enc.permute(0, 2, 1)#[batch_size,enc_in,seq_len]，[32,7,96]
         enc_out = self.enc_embedding(x_enc, x_mark_enc)#[batch_size,enc_in,seq_len]，[32,7,96]
-        print("enc_out",enc_out.shape)
+        if self.log_prem:
+            logger.info("B,L,N", B, L, N)
+            logger.info("enc_out", enc_out.shape)
 
         channel_emb = self.channel_embedding.expand(enc_out.shape[0], N, -1)
-        print("channel_emb",channel_emb.shape)
-        phase_emb = self.phase_embedding(phase.view(-1, 1).expand(B, N))
-        print("phase_emb",phase_emb.shape)
-        joint_emb = self.joint_embedding(phase).reshape(B, self.enc_in, self.d_model)
-        print("joint_emb",joint_emb.shape)
-        enc_out = enc_out[:, :N, :] + channel_emb + phase_emb + joint_emb  # [B,N,],[32, 7, 256]
-        enc_orgin = enc_out
 
+        phase_emb = self.phase_embedding(phase.view(-1, 1).expand(B, N))
+        joint_emb = self.joint_embedding(phase).reshape(B, self.enc_in, self.d_model)
+        enc_out = enc_out[:, :N, :] + channel_emb + phase_emb + joint_emb  # [B,N,],[32, 7, 256]
+        if self.log_prem:
+            logger.info("channel_emb", channel_emb.shape)
+            logger.info("phase_emb", phase_emb.shape)
+            logger.info("joint_emb", joint_emb.shape)
+            logger.info("enc_out", enc_out.shape)
+        enc_orgin = enc_out
         enc_out, attns = self.encoder(enc_out, attn_mask=enc_self_mask)#[batch_size,enc_in,seq_len],[32, 7, 96]
 
         dec_out = self.projector(enc_out + enc_orgin).permute(0, 2, 1)[:, :, :N]
-        print("dec_out",dec_out.shape)
+        if self.log_prem:
+            logger.info("dec_out", dec_out.shape)
 
         linear_out = self.Linear(x_enc.permute(0,2,1)).permute(0,2,1)#[batch_size,seq_len,enc_in][32, 96, 7]
-        print("linear_out",linear_out.shape)
-        dec_out = self.revin_layer(dec_out[:, -self.pred_len:, :]+self.w_dec*linear_out, 'denorm')#[batch_size,seq_len,enc_in][32, 96, 7]
 
+        dec_out = self.revin_layer(dec_out[:, -self.pred_len:, :]+self.w_dec*linear_out, 'denorm')#[batch_size,seq_len,enc_in][32, 96, 7]
+        if self.log_prem:
+            logger.info("dec_out", dec_out.shape)
+            logger.info("linear_out", linear_out.shape)
+            self.log_prem = False
         if self.output_attention:
             return dec_out[:, -self.pred_len:, :], attns
         else:

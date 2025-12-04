@@ -8,7 +8,7 @@ from exp.exp_anomaly_detection import Exp_Anomaly_Detection
 from exp.exp_classification import Exp_Classification
 import random
 import numpy as np
-
+from log.log_result import create_logger
 if __name__ == '__main__':
     fix_seed = 2021
     random.seed(fix_seed)
@@ -122,6 +122,8 @@ if __name__ == '__main__':
         Exp = Exp_Classification
     else:
         Exp = Exp_Long_Term_Forecast
+
+    logger = create_logger()
 
     if args.is_training:
         for ii in range(args.itr):
