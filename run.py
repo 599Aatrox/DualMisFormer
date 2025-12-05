@@ -8,7 +8,19 @@ from exp.exp_anomaly_detection import Exp_Anomaly_Detection
 from exp.exp_classification import Exp_Classification
 import random
 import numpy as np
-from log.log_result import create_logger
+import logging
+os.makedirs("logs", exist_ok=True)
+
+# 配置日志
+logging.basicConfig(
+    filename='logs/experiment.log',          # 日志文件路径
+    filemode='a',                            # 追加模式（'w' 会覆盖）
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    level=logging.INFO                      # 只记录 INFO 及以上级别
+)
+logger = logging.getLogger()
+
+
 if __name__ == '__main__':
     fix_seed = 2021
     random.seed(fix_seed)
@@ -110,6 +122,7 @@ if __name__ == '__main__':
 
     print('Args in experiment:')
     print(args)
+    logger.info(args)
 
     if args.task_name == 'long_term_forecast':
         Exp = Exp_Long_Term_Forecast

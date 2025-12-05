@@ -1,5 +1,6 @@
 import logging
 import os
+import warnings
 
 import torch
 import torch.nn as nn
@@ -23,6 +24,7 @@ logging.basicConfig(
     level=logging.INFO                      # 只记录 INFO 及以上级别
 )
 logger = logging.getLogger()
+warnings.filterwarnings('ignore')
 class Model(nn.Module):
 
     def __init__(self, configs):
