@@ -10,11 +10,22 @@ import time
 import warnings
 import numpy as np
 import logging
-from loss.tildeq import tildeq_loss
+from loss.tildeq import tildeq_loss as tildeq
 
 
 warnings.filterwarnings('ignore')
-logger = logging.getLogger(__name__)
+# 创建 logs 目录（如果不存在）
+os.makedirs("logs", exist_ok=True)
+
+# 配置日志
+logging.basicConfig(
+    filename='logs/experiment.log',          # 日志文件路径
+    filemode='a',                            # 追加模式（'w' 会覆盖）
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    level=logging.INFO                      # 只记录 INFO 及以上级别
+)
+logger = logging.getLogger()
+warnings.filterwarnings('ignore')
 
 
 class Exp_Long_Term_Forecast(Exp_Basic):

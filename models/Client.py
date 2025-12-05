@@ -1,4 +1,5 @@
 import logging
+import os
 
 import torch
 import torch.nn as nn
@@ -11,8 +12,17 @@ from layers.SelfAttention_Family import FullAttention, AttentionLayer, ProbAtten
 from layers.Embed import DataEmbedding, DataEmbedding_inverted
 import numpy as np
 from layers.RevIN import RevIN
+# 创建 logs 目录（如果不存在）
+os.makedirs("logs", exist_ok=True)
 
-logger = logging.getLogger(__name__)
+# 配置日志
+logging.basicConfig(
+    filename='logs/experiment.log',          # 日志文件路径
+    filemode='a',                            # 追加模式（'w' 会覆盖）
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    level=logging.INFO                      # 只记录 INFO 及以上级别
+)
+logger = logging.getLogger()
 class Model(nn.Module):
 
     def __init__(self, configs):
@@ -68,7 +78,7 @@ class Model(nn.Module):
         self.w_dec = torch.nn.Parameter(torch.FloatTensor([configs.w_lin]*configs.enc_in),requires_grad=True)
         self.revin_layer = RevIN(configs.enc_in)
         self.log_prem = True
-
+        self.use_L = configs.use_L
 
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec,phase,
@@ -100,16 +110,21 @@ class Model(nn.Module):
         dec_out = self.projector(enc_out + enc_orgin).permute(0, 2, 1)[:, :, :N]
         if self.log_prem:
             logger.info("dec_out", dec_out.shape)
-        x = x_enc.permute(0,2,1)
-        x3 = self.Linear(x)
-        x3 = self.GeLU(x3)
-        x3 = self.Hidden1(x3)
-        linear_out= x3.permute(0,2,1)
-        dec_out = self.revin_layer(dec_out[:, -self.pred_len:, :]+self.w_dec*linear_out, 'denorm')#[batch_size,seq_len,enc_in][32, 96, 7]
-        if self.log_prem:
-            logger.info("dec_out", dec_out.shape)
-            logger.info("linear_out", linear_out.shape)
-            self.log_prem = False
+        if self.use_L:
+            x = x_enc.permute(0,2,1)
+            x3 = self.Linear(x)
+            x3 = self.GeLU(x3)
+            x3 = self.Hidden1(x3)
+            linear_out= x3.permute(0,2,1)
+            dec_out = self.revin_layer(dec_out[:, -self.pred_len:, :]+self.w_dec*linear_out, 'denorm')#[batch_size,seq_len,enc_in][32, 96, 7]
+            if self.log_prem:
+                logger.info("dec_out", dec_out.shape)
+                logger.info("linear_out", linear_out.shape)
+        else:
+            dec_out = self.revin_layer(dec_out[:, -self.pred_len:, :], 'denorm')#[batch_size,seq_len,enc_in][32, 96, 7]
+            if self.log_prem:
+                logger.info("dec_out", dec_out.shape)
+        self.log_prem = False
         if self.output_attention:
             return dec_out[:, -self.pred_len:, :], attns
         else:

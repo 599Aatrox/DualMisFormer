@@ -70,6 +70,7 @@ if __name__ == '__main__':
     parser.add_argument('--activation', type=str, default='gelu', help='activation')
     parser.add_argument('--output_attention', action='store_true', help='whether to output attention in ecoder')
     parser.add_argument('--cycle_len',type=int, default=96, help='cycle length for TimesNet')
+    parser.add_argument('--use_L',default=1,type=int, help='use Linear in Client ')
 
     # optimization
     parser.add_argument('--num_workers', type=int, default=10, help='data loader num workers')
@@ -122,8 +123,6 @@ if __name__ == '__main__':
         Exp = Exp_Classification
     else:
         Exp = Exp_Long_Term_Forecast
-
-    logger = create_logger()
 
     if args.is_training:
         for ii in range(args.itr):
