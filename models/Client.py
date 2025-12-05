@@ -62,8 +62,9 @@ class Model(nn.Module):
             nn.Dropout(configs.output_proj_dropout),
             nn.Linear(configs.d_model * 4, configs.pred_len),
         )
-        self.Linear = nn.Sequential()
-        self.Linear.add_module('Linear',nn.Linear(self.seq_len, self.pred_len))
+        self.Linear = nn.Linear(self.seq_len, self.seq_len)
+        self.GeLU = nn.GELU()
+        self.Hidden1 = nn.Linear(self.seq_len, self.pred_len)
         self.w_dec = torch.nn.Parameter(torch.FloatTensor([configs.w_lin]*configs.enc_in),requires_grad=True)
         self.revin_layer = RevIN(configs.enc_in)
         self.log_prem = True
@@ -99,10 +100,11 @@ class Model(nn.Module):
         dec_out = self.projector(enc_out + enc_orgin).permute(0, 2, 1)[:, :, :N]
         if self.log_prem:
             logger.info("dec_out", dec_out.shape)
-        seq_last = x_enc[:, -1:, :].detach()
-        x_enc = x_enc-seq_last
-        linear_out = self.Linear(x_enc.permute(0,2,1)).permute(0,2,1)#[batch_size,seq_len,enc_in][32, 96, 7]
-        linear_out = linear_out+seq_last
+        x = x_enc.permute(0,2,1)
+        x3 = self.Linear(x)
+        x3 = self.GeLU(x3)
+        x3 = self.Hidden1(x3)
+        linear_out= x3.permute(0,2,1)
         dec_out = self.revin_layer(dec_out[:, -self.pred_len:, :]+self.w_dec*linear_out, 'denorm')#[batch_size,seq_len,enc_in][32, 96, 7]
         if self.log_prem:
             logger.info("dec_out", dec_out.shape)

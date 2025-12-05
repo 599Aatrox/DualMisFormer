@@ -10,6 +10,7 @@ import time
 import warnings
 import numpy as np
 import logging
+from loss.tildeq import tildeq_loss
 
 
 warnings.filterwarnings('ignore')
@@ -36,7 +37,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         return model_optim
 
     def _select_criterion(self):
-        criterion = nn.MSELoss()
+        if self.args.loss =='tilde_q':
+            criterion = lambda x,y: tildeq(x,y, alpha = 0.0, gamma = 0.5)
+        else:
+            criterion = nn.L1Loss()
         return criterion
 
     def vali(self, vali_data, vali_loader, criterion):
