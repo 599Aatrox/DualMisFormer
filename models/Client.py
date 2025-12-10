@@ -25,6 +25,102 @@ logging.basicConfig(
 )
 logger = logging.getLogger()
 warnings.filterwarnings('ignore')
+
+
+class CrossModalAttentionFusion(nn.Module):
+    """交叉注意力融合模块"""
+
+    def __init__(self, d_model, n_heads=8, dropout=0.1):
+        super().__init__()
+        self.d_model = d_model
+        self.n_heads = n_heads
+
+        # 三种模态间的交叉注意力
+        self.cross_attn_c2p = AttentionLayer(
+            FullAttention(False, attention_dropout=dropout, output_attention=False),
+            d_model, n_heads
+        )
+        self.cross_attn_p2j = AttentionLayer(
+            FullAttention(False, attention_dropout=dropout, output_attention=False),
+            d_model, n_heads
+        )
+        self.cross_attn_j2c = AttentionLayer(
+            FullAttention(False, attention_dropout=dropout, output_attention=False),
+            d_model, n_heads
+        )
+
+        # 自注意力用于最终融合
+        self.self_attn = AttentionLayer(
+            FullAttention(False, attention_dropout=dropout, output_attention=False),
+            d_model, n_heads
+        )
+
+        # 残差连接和层归一化
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.norm3 = nn.LayerNorm(d_model)
+        self.norm_final = nn.LayerNorm(d_model)
+
+        # 门控机制（可选）
+        self.gate = nn.Sequential(
+            nn.Linear(d_model * 3, d_model),
+            nn.Sigmoid()
+        )
+
+        # 输出投影
+        self.output_proj = nn.Linear(d_model * 3, d_model)
+
+    def forward(self, channel_emb, phase_emb, joint_emb):
+        """
+        channel_emb: [B, N, D]
+        phase_emb: [B, N, D]
+        joint_emb: [B, N, D]
+        返回: [B, N, D]
+        """
+        B, N, D = channel_emb.shape
+
+        # 1. 交叉注意力：通道→相位
+        channel_to_phase, _ = self.cross_attn_c2p(
+            phase_emb,  # Query
+            channel_emb,  # Key
+            channel_emb  # Value
+        )
+        channel_to_phase = self.norm1(channel_emb + channel_to_phase)
+
+        # 2. 交叉注意力：相位→联合
+        phase_to_joint, _ = self.cross_attn_p2j(
+            joint_emb,
+            phase_emb,
+            phase_emb
+        )
+        phase_to_joint = self.norm2(phase_emb + phase_to_joint)
+
+        # 3. 交叉注意力：联合→通道
+        joint_to_channel, _ = self.cross_attn_j2c(
+            channel_emb,
+            joint_emb,
+            joint_emb
+        )
+        joint_to_channel = self.norm3(joint_emb + joint_to_channel)
+
+        # 4. 拼接三种增强后的表示
+        fused = torch.cat([channel_to_phase, phase_to_joint, joint_to_channel], dim=-1)
+
+        # 5. 门控加权（可选）
+        gate_weights = self.gate(fused)  # [B, N, D]
+        # 这里可以按维度分割gate_weights分别加权三个分量
+
+        # 6. 自注意力进一步融合
+        fused_proj = self.output_proj(fused)  # [B, N, D]
+        fused_final, _ = self.self_attn(
+            fused_proj,
+            fused_proj,
+            fused_proj
+        )
+        fused_final = self.norm_final(fused_proj + fused_final)
+
+        return fused_final
+
 class Model(nn.Module):
 
     def __init__(self, configs):
@@ -81,6 +177,11 @@ class Model(nn.Module):
         self.revin_layer = RevIN(configs.enc_in)
         self.log_prem = True
         self.use_L = configs.use_L
+        self.cross_attention = CrossModalAttentionFusion(
+            d_model=configs.d_model,
+            n_heads=configs.n_heads,  # 使用相同的头数
+            dropout=configs.dropout
+        )
 
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec,phase,
@@ -100,7 +201,9 @@ class Model(nn.Module):
 
         phase_emb = self.phase_embedding(phase.view(-1, 1).expand(B, N))
         joint_emb = self.joint_embedding(phase).reshape(B, self.enc_in, self.d_model)
-        enc_out = enc_out[:, :N, :] + channel_emb + phase_emb + joint_emb  # [B,N,],[32, 7, 256]
+        # enc_out = enc_out[:, :N, :] + channel_emb + phase_emb + joint_emb  # [B,N,],[32, 7, 256]
+        fused_emb = self.cross_attention(channel_emb, phase_emb, joint_emb)
+        enc_out = enc_out[:, :N, :] + fused_emb
         if self.log_prem:
             logger.info("channel_emb", channel_emb.shape)
             logger.info("phase_emb", phase_emb.shape)
