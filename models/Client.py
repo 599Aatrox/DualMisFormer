@@ -4,15 +4,11 @@ import warnings
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from mpmath import phase
 
-from layers.Transformer_EncDec import Decoder, DecoderLayer, Encoder, EncoderLayer, ConvLayer
-from layers.Autoformer_EncDec import moving_avg
-from layers.SelfAttention_Family import FullAttention, AttentionLayer, ProbAttention, DSAttention
-from layers.Embed import DataEmbedding, DataEmbedding_inverted
-import numpy as np
+from layers.Embed import DataEmbedding_inverted
 from layers.RevIN import RevIN
+from layers.SelfAttention_Family import FullAttention, AttentionLayer
+from layers.Transformer_EncDec import Encoder, EncoderLayer
 
 # 创建 logs 目录（如果不存在）
 os.makedirs("logs", exist_ok=True)
@@ -28,103 +24,50 @@ logger = logging.getLogger()
 warnings.filterwarnings('ignore')
 
 
-class CrossModalAttentionFusion(nn.Module):
-    """交叉注意力融合模块"""
+class LightAttentionBranch(nn.Module):
+    """轻量级注意力线性分支"""
 
-    def __init__(self, d_model, n_heads=8, dropout=0.1):
+    def __init__(self, seq_len, pred_len, enc_in, n_heads=4, dropout=0.1):
         super().__init__()
-        self.d_model = d_model
-        self.n_heads = n_heads
 
-        # 三种模态间的交叉注意力
-        self.cross_attn_c2p = AttentionLayer(
-            FullAttention(False, attention_dropout=dropout, output_attention=False),
-            d_model, n_heads
-        )
-        self.cross_attn_p2j = AttentionLayer(
-            FullAttention(False, attention_dropout=dropout, output_attention=False),
-            d_model, n_heads
-        )
-        self.cross_attn_j2c = AttentionLayer(
-            FullAttention(False, attention_dropout=dropout, output_attention=False),
-            d_model, n_heads
+        # 局部注意力机制
+        self.local_attn = nn.MultiheadAttention(
+            embed_dim=enc_in,
+            num_heads=n_heads,
+            dropout=dropout,
+            batch_first=True
         )
 
-        # 自注意力用于最终融合
-        self.self_attn = AttentionLayer(
-            FullAttention(False, attention_dropout=dropout, output_attention=False),
-            d_model, n_heads
+        # 前馈网络
+        self.ffn = nn.Sequential(
+            nn.Linear(seq_len, seq_len * 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(seq_len * 2, pred_len)
         )
 
-        # 残差连接和层归一化
-        self.norm1 = nn.LayerNorm(d_model)
-        self.norm2 = nn.LayerNorm(d_model)
-        self.norm3 = nn.LayerNorm(d_model)
-        self.norm_final = nn.LayerNorm(d_model)
+        # 归一化层
+        self.norm1 = nn.LayerNorm(seq_len)
+        self.norm2 = nn.LayerNorm(seq_len)
 
-        # 门控机制（可选）
-        self.gate = nn.Sequential(
-            nn.Linear(d_model * 3, d_model),
-            nn.Sigmoid()
-        )
+        # 残差连接
+        self.residual_proj = nn.Linear(seq_len, pred_len)
 
-        # 输出投影
-        self.output_proj = nn.Linear(d_model * 3, d_model)
+    def forward(self, x):  # x: [B, N, L]
+        residual = self.residual_proj(x.transpose(1, 2)).transpose(1, 2)
 
-    def forward(self, channel_emb, phase_emb, joint_emb):
-        """
-        channel_emb: [B, N, D]
-        phase_emb: [B, N, D]
-        joint_emb: [B, N, D]
-        返回: [B, N, D]
-        """
-        B, N, D = channel_emb.shape
+        # 转置以适应注意力输入
+        x_t = x.transpose(1, 2)  # [B, L, N]
 
-        # 1. 交叉注意力：通道→相位
-        channel_to_phase, _ = self.cross_attn_c2p(
-            phase_emb,  # Query
-            channel_emb,  # Key
-            channel_emb,  # Value
-            attn_mask=None
-        )
-        channel_to_phase = self.norm1(channel_emb + channel_to_phase)
+        # 局部自注意力
+        attn_out, _ = self.local_attn(x_t, x_t, x_t)
+        x_t = self.norm1(x_t + attn_out)
 
-        # 2. 交叉注意力：相位→联合
-        phase_to_joint, _ = self.cross_attn_p2j(
-            joint_emb,
-            phase_emb,
-            phase_emb,
-            attn_mask=None
-        )
-        phase_to_joint = self.norm2(phase_emb + phase_to_joint)
+        # 前馈网络
+        ffn_out = self.ffn(x_t)
+        out = self.norm2(x_t + ffn_out)  # [B, L, pred_len?]
 
-        # 3. 交叉注意力：联合→通道
-        joint_to_channel, _ = self.cross_attn_j2c(
-            channel_emb,
-            joint_emb,
-            joint_emb,
-            attn_mask=None
-        )
-        joint_to_channel = self.norm3(joint_emb + joint_to_channel)
-
-        # 4. 拼接三种增强后的表示
-        fused = torch.cat([channel_to_phase, phase_to_joint, joint_to_channel], dim=-1)
-
-        # 5. 门控加权（可选）
-        gate_weights = self.gate(fused)  # [B, N, D]
-        # 这里可以按维度分割gate_weights分别加权三个分量
-
-        # 6. 自注意力进一步融合
-        fused_proj = self.output_proj(fused)  # [B, N, D]
-        fused_final, _ = self.self_attn(
-            fused_proj,
-            fused_proj,
-            fused_proj,
-            attn_mask=None
-        )
-        fused_final = self.norm_final(fused_proj + fused_final)
-
-        return fused_final
+        return out.transpose(1, 2) + residual  # 修正维度
 
 
 class Model(nn.Module):
@@ -183,11 +126,8 @@ class Model(nn.Module):
         self.revin_layer = RevIN(configs.enc_in)
         self.log_prem = True
         self.use_L = configs.use_L
-        self.cross_attention = CrossModalAttentionFusion(
-            d_model=configs.d_model,
-            n_heads=configs.n_heads,  # 使用相同的头数
-            dropout=configs.dropout
-        )
+        self.light_branch = LightAttentionBranch(self.seq_len, self.pred_len, self.enc_in)
+
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, phase,
                 enc_self_mask=None, dec_self_mask=None, dec_enc_mask=None, ):
@@ -206,11 +146,7 @@ class Model(nn.Module):
         phase_emb = self.phase_embedding(phase.view(-1, 1).expand(B, N))
         joint_emb = self.joint_embedding(phase).reshape(B, self.enc_in, self.d_model)
 
-        if self.use_L:
-            fused_emb = self.cross_attention(channel_emb, phase_emb, joint_emb)
-            enc_out = enc_out[:, :N, :] + fused_emb
-        else:
-            enc_out = enc_out[:, :N, :] + channel_emb + phase_emb + joint_emb  # [B,N,],[32, 7, 256]
+        enc_out = enc_out[:, :N, :] + channel_emb + phase_emb + joint_emb  # [B,N,],[32, 7, 256]
         if self.log_prem:
             logger.info("channel_emb, {channel_emb.shape}")
             logger.info("phase_emb, {phase_emb.shape}")
@@ -224,9 +160,10 @@ class Model(nn.Module):
             logger.info("dec_out, {dec_out.shape}")
         if 1:
             x = x_enc.permute(0, 2, 1)
-            x3 = self.Linear(x)
-            x3 = self.GeLU(x3)
-            x3 = self.Hidden1(x3)
+            # x3 = self.Linear(x)
+            # x3 = self.GeLU(x3)
+            # x3 = self.Hidden1(x3)
+            x3 = self.light_branch(x)
             linear_out = x3.permute(0, 2, 1)
             dec_out = self.revin_layer(dec_out[:, -self.pred_len:, :] + self.w_dec * linear_out,
                                        'denorm')  # [batch_size,seq_len,enc_in][32, 96, 7]
