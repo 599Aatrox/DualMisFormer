@@ -201,52 +201,55 @@ class Model(nn.Module):
         x_enc = self.revin_layer(x_enc, 'norm')  # 归一化
         B, L, N = x_enc.shape
 
+        enc_out = self.enc_embedding(x_enc, x_mark_enc)
 
-        # enc_out = x_enc.permute(0, 2, 1)#[batch_size,enc_in,seq_len]，[32,7,96]
-        enc_out = self.enc_embedding(x_enc, x_mark_enc)  #[batch_size,enc_in,seq_len]，[32,7,96]
+        # 优化的日志记录方式
         if self.log_prem:
-            logger.info("B,L,N", B, L, N)
-            logger.info("enc_out", enc_out.shape)
+            logger.info(f"Input shape - B: {B}, L: {L}, N: {N}")
+            logger.info(f"Encoded output shape: {enc_out.shape}")
 
         channel_emb = self.channel_embedding.expand(enc_out.shape[0], N, -1)
-
         phase_emb = self.phase_embedding(phase.view(-1, 1).expand(B, N))
         joint_emb = self.joint_embedding(phase).reshape(B, self.enc_in, self.d_model)
 
-        enc_out = enc_out[:, :N, :] + channel_emb + phase_emb + joint_emb  # [B,N,],[32, 7, 256]
-        enc_out = enc_out[:, :N, :] + channel_emb + phase_emb + joint_emb  # [B,N,],[32, 7, 256]
-        # fused_emb = self.cross_attention(channel_emb, phase_emb, joint_emb)
-        # enc_out = enc_out[:, :N, :] + fused_emb
+        enc_out = enc_out[:, :N, :] + channel_emb + phase_emb + joint_emb
+
         if self.log_prem:
-            logger.info("channel_emb", channel_emb.shape)
-            logger.info("phase_emb", phase_emb.shape)
-            logger.info("joint_emb", joint_emb.shape)
-            logger.info("enc_out", enc_out.shape)
+            logger.info(f"Channel embedding shape: {channel_emb.shape}")
+            logger.info(f"Phase embedding shape: {phase_emb.shape}")
+            logger.info(f"Joint embedding shape: {joint_emb.shape}")
+            logger.info(f"Final encoded output shape: {enc_out.shape}")
+
         enc_orgin = enc_out
-        enc_out, attns = self.encoder(enc_out, attn_mask=enc_self_mask)  #[batch_size,enc_in,seq_len],[32, 7, 96]
+        enc_out, attns = self.encoder(enc_out, attn_mask=enc_self_mask)
 
         dec_out = self.projector(enc_out + enc_orgin).permute(0, 2, 1)[:, :, :N]
+
         if self.log_prem:
-            logger.info("dec_out", dec_out.shape)
+            logger.info(f"Decoder output shape: {dec_out.shape}")
+
         if self.use_L:
-            trend = self.moving_avg(x_enc)  # [B, L, N]
-            seasonal = x_enc - trend  # [B, L, N]
-            trend_input = trend.permute(0, 2, 1)  # [B, N, L]
-            seasonal_input = seasonal.permute(0, 2, 1)  # [B, N, L]
-            pred_trend = self.trend_proj(trend_input)  # [B, N, pred_len]
-            pred_seasonal = self.seasonal_proj(seasonal_input)  # [B, N, pred_len]
-            linear_out = (pred_trend + pred_seasonal).permute(0, 2, 1)  # [B, pred_len, N]
-            dec_out = self.revin_layer(dec_out[:, -self.pred_len:, :] + self.w_dec * linear_out,
-                                       'denorm')  #[batch_size,seq_len,enc_in][32, 96, 7]
+            trend = self.moving_avg(x_enc)
+            seasonal = x_enc - trend
+            trend_input = trend.permute(0, 2, 1)
+            seasonal_input = seasonal.permute(0, 2, 1)
+            pred_trend = self.trend_proj(trend_input)
+            pred_seasonal = self.seasonal_proj(seasonal_input)
+            linear_out = (pred_trend + pred_seasonal).permute(0, 2, 1)
+
+            dec_out = self.revin_layer(dec_out[:, -self.pred_len:, :] + self.w_dec * linear_out, 'denorm')
+
             if self.log_prem:
-                logger.info("dec_out", dec_out.shape)
-                logger.info("linear_out", linear_out.shape)
+                logger.info(f"Linear output shape: {linear_out.shape}")
+                logger.info(f"Final decoder output shape: {dec_out.shape}")
         else:
-            dec_out = self.revin_layer(dec_out[:, -self.pred_len:, :],
-                                       'denorm')  #[batch_size,seq_len,enc_in][32, 96, 7]
+            dec_out = self.revin_layer(dec_out[:, -self.pred_len:, :], 'denorm')
             if self.log_prem:
-                logger.info("dec_out", dec_out.shape)
+                logger.info(f"Final decoder output shape: {dec_out.shape}")
+
+        # 只在第一次前向传播时记录日志
         self.log_prem = False
+
         if self.output_attention:
             return dec_out[:, -self.pred_len:, :], attns
         else:
