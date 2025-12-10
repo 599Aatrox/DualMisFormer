@@ -1,17 +1,18 @@
-from data_provider.data_factory import data_provider
-from exp.exp_basic import Exp_Basic
-from utils.tools import EarlyStopping, adjust_learning_rate, visual
-from utils.metrics import metric
-import torch
-import torch.nn as nn
-from torch import optim
+import logging
 import os
 import time
 import warnings
-import numpy as np
-import logging
-from loss.tildeq import tildeq_loss as tildeq
 
+import numpy as np
+import torch
+import torch.nn as nn
+from torch import optim
+
+from data_provider.data_factory import data_provider
+from exp.exp_basic import Exp_Basic
+from loss.tildeq import tildeq_loss as tildeq
+from utils.metrics import metric
+from utils.tools import EarlyStopping, visual
 
 warnings.filterwarnings('ignore')
 # 创建 logs 目录（如果不存在）
@@ -261,8 +262,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
         trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
         print('test shape:', preds.shape, trues.shape)
-
-        # result save
+        # # result 用preds 和trues画图
+        # visual(trues, preds, os.path.join(folder_path, 'prediction.pdf'))
+        # # result save
         folder_path = './results/' + setting + '/'
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)

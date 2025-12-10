@@ -24,51 +24,99 @@ logger = logging.getLogger()
 warnings.filterwarnings('ignore')
 
 
-class LightAttentionBranch(nn.Module):
-    """轻量级注意力线性分支"""
+class CrossModalAttentionFusion(nn.Module):
+    """交叉注意力融合模块"""
 
-    def __init__(self, seq_len, pred_len, enc_in, n_heads=4, dropout=0.1):
+    def __init__(self, d_model, n_heads=8, dropout=0.1):
         super().__init__()
+        self.d_model = d_model
+        self.n_heads = n_heads
 
-        # 局部注意力机制
-        self.local_attn = nn.MultiheadAttention(
-            embed_dim=enc_in,
-            num_heads=n_heads,
-            dropout=dropout,
-            batch_first=True
+        # 三种模态间的交叉注意力
+        self.cross_attn_c2p = AttentionLayer(
+            FullAttention(False, attention_dropout=dropout, output_attention=False),
+            d_model, n_heads
+        )
+        self.cross_attn_p2j = AttentionLayer(
+            FullAttention(False, attention_dropout=dropout, output_attention=False),
+            d_model, n_heads
+        )
+        self.cross_attn_j2c = AttentionLayer(
+            FullAttention(False, attention_dropout=dropout, output_attention=False),
+            d_model, n_heads
         )
 
-        # 前馈网络
-        self.ffn = nn.Sequential(
-            nn.Linear(seq_len, seq_len * 2),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(seq_len * 2, pred_len)
+        # 自注意力用于最终融合
+        self.self_attn = AttentionLayer(
+            FullAttention(False, attention_dropout=dropout, output_attention=False),
+            d_model, n_heads
         )
 
-        # 归一化层
-        self.norm1 = nn.LayerNorm(seq_len)
-        self.norm2 = nn.LayerNorm(seq_len)
+        # 残差连接和层归一化
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.norm3 = nn.LayerNorm(d_model)
+        self.norm_final = nn.LayerNorm(d_model)
 
-        # 残差连接
-        self.residual_proj = nn.Linear(seq_len, pred_len)
+        # 门控机制（可选）
+        self.gate = nn.Sequential(
+            nn.Linear(d_model * 3, d_model),
+            nn.Sigmoid()
+        )
 
-    def forward(self, x):  # x: [B, N, L]
-        residual = self.residual_proj(x.transpose(1, 2)).transpose(1, 2)
+        # 输出投影
+        self.output_proj = nn.Linear(d_model * 3, d_model)
 
-        # 转置以适应注意力输入
-        x_t = x.transpose(1, 2)  # [B, L, N]
+    def forward(self, channel_emb, phase_emb, joint_emb):
+        """
+        channel_emb: [B, N, D]
+        phase_emb: [B, N, D]
+        joint_emb: [B, N, D]
+        返回: [B, N, D]
+        """
+        B, N, D = channel_emb.shape
 
-        # 局部自注意力
-        attn_out, _ = self.local_attn(x_t, x_t, x_t)
-        x_t = self.norm1(x_t + attn_out)
+        # 1. 交叉注意力：通道→相位
+        channel_to_phase, _ = self.cross_attn_c2p(
+            phase_emb,  # Query
+            channel_emb,  # Key
+            channel_emb  # Value
+        )
+        channel_to_phase = self.norm1(channel_emb + channel_to_phase)
 
-        # 前馈网络
-        ffn_out = self.ffn(x_t)
-        out = self.norm2(x_t + ffn_out)  # [B, L, pred_len?]
+        # 2. 交叉注意力：相位→联合
+        phase_to_joint, _ = self.cross_attn_p2j(
+            joint_emb,
+            phase_emb,
+            phase_emb
+        )
+        phase_to_joint = self.norm2(phase_emb + phase_to_joint)
 
-        return out.transpose(1, 2) + residual  # 修正维度
+        # 3. 交叉注意力：联合→通道
+        joint_to_channel, _ = self.cross_attn_j2c(
+            channel_emb,
+            joint_emb,
+            joint_emb
+        )
+        joint_to_channel = self.norm3(joint_emb + joint_to_channel)
 
+        # 4. 拼接三种增强后的表示
+        fused = torch.cat([channel_to_phase, phase_to_joint, joint_to_channel], dim=-1)
+
+        # 5. 门控加权（可选）
+        gate_weights = self.gate(fused)  # [B, N, D]
+        # 这里可以按维度分割gate_weights分别加权三个分量
+
+        # 6. 自注意力进一步融合
+        fused_proj = self.output_proj(fused)  # [B, N, D]
+        fused_final, _ = self.self_attn(
+            fused_proj,
+            fused_proj,
+            fused_proj
+        )
+        fused_final = self.norm_final(fused_proj + fused_final)
+
+        return fused_final
 
 class Model(nn.Module):
 
@@ -102,7 +150,7 @@ class Model(nn.Module):
             ],
             norm_layer=torch.nn.LayerNorm(configs.d_model)
         )
-        # 通道嵌入
+        #通道嵌入
         self.channel_embedding = nn.Parameter(torch.zeros(configs.enc_in, configs.d_model))
         self.phase_embedding = nn.Embedding(self.cycle_len, configs.d_model)
         nn.init.xavier_normal(self.phase_embedding.weight)
@@ -119,15 +167,33 @@ class Model(nn.Module):
             nn.Dropout(configs.output_proj_dropout),
             nn.Linear(configs.d_model * 4, configs.pred_len),
         )
-        self.Linear = nn.Linear(self.seq_len, self.seq_len)
-        self.GeLU = nn.GELU()
-        self.Hidden1 = nn.Linear(self.seq_len, self.pred_len)
+        if self.use_L:
+            kernel_size = max(3, int(self.seq_len // 10))
+            if kernel_size % 2 == 0:
+                kernel_size += 1
+            self.kernel_size = kernel_size
+
+            self.trend_proj = nn.Sequential(
+                nn.Linear(self.seq_len, self.seq_len * 2),
+                nn.GELU(),
+                nn.Dropout(configs.dropout),
+                nn.Linear(self.seq_len * 2, self.pred_len)
+            )
+            self.seasonal_proj = nn.Sequential(
+                nn.Linear(self.seq_len, self.seq_len * 2),
+                nn.GELU(),
+                nn.Dropout(configs.dropout),
+                nn.Linear(self.seq_len * 2, self.pred_len)
+            )
         self.w_dec = torch.nn.Parameter(torch.FloatTensor([configs.w_lin] * configs.enc_in), requires_grad=True)
         self.revin_layer = RevIN(configs.enc_in)
         self.log_prem = True
         self.use_L = configs.use_L
-        self.light_branch = LightAttentionBranch(self.seq_len, self.pred_len, self.enc_in)
-
+        self.cross_attention = CrossModalAttentionFusion(
+            d_model=configs.d_model,
+            n_heads=configs.n_heads,  # 使用相同的头数
+            dropout=configs.dropout
+        )
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, phase,
                 enc_self_mask=None, dec_self_mask=None, dec_enc_mask=None, ):
@@ -135,11 +201,12 @@ class Model(nn.Module):
         x_enc = self.revin_layer(x_enc, 'norm')  # 归一化
         B, L, N = x_enc.shape
 
+
         # enc_out = x_enc.permute(0, 2, 1)#[batch_size,enc_in,seq_len]，[32,7,96]
-        enc_out = self.enc_embedding(x_enc, x_mark_enc)  # [batch_size,enc_in,seq_len]，[32,7,96]
+        enc_out = self.enc_embedding(x_enc, x_mark_enc)  #[batch_size,enc_in,seq_len]，[32,7,96]
         if self.log_prem:
-            logger.info("B,L,N, {B}, {L}, {N}")
-            logger.info("enc_out, {enc_out.shape}")
+            logger.info("B,L,N", B, L, N)
+            logger.info("enc_out", enc_out.shape)
 
         channel_emb = self.channel_embedding.expand(enc_out.shape[0], N, -1)
 
@@ -147,36 +214,55 @@ class Model(nn.Module):
         joint_emb = self.joint_embedding(phase).reshape(B, self.enc_in, self.d_model)
 
         enc_out = enc_out[:, :N, :] + channel_emb + phase_emb + joint_emb  # [B,N,],[32, 7, 256]
+        enc_out = enc_out[:, :N, :] + channel_emb + phase_emb + joint_emb  # [B,N,],[32, 7, 256]
+        # fused_emb = self.cross_attention(channel_emb, phase_emb, joint_emb)
+        # enc_out = enc_out[:, :N, :] + fused_emb
         if self.log_prem:
-            logger.info("channel_emb, {channel_emb.shape}")
-            logger.info("phase_emb, {phase_emb.shape}")
-            logger.info("joint_emb, {joint_emb.shape}")
-            logger.info("enc_out, {enc_out.shape}")
+            logger.info("channel_emb", channel_emb.shape)
+            logger.info("phase_emb", phase_emb.shape)
+            logger.info("joint_emb", joint_emb.shape)
+            logger.info("enc_out", enc_out.shape)
         enc_orgin = enc_out
-        enc_out, attns = self.encoder(enc_out, attn_mask=enc_self_mask)  # [batch_size,enc_in,seq_len],[32, 7, 96]
+        enc_out, attns = self.encoder(enc_out, attn_mask=enc_self_mask)  #[batch_size,enc_in,seq_len],[32, 7, 96]
 
         dec_out = self.projector(enc_out + enc_orgin).permute(0, 2, 1)[:, :, :N]
         if self.log_prem:
-            logger.info("dec_out, {dec_out.shape}")
-        if 1:
-            x = x_enc.permute(0, 2, 1)
-            # x3 = self.Linear(x)
-            # x3 = self.GeLU(x3)
-            # x3 = self.Hidden1(x3)
-            x3 = self.light_branch(x)
-            linear_out = x3.permute(0, 2, 1)
+            logger.info("dec_out", dec_out.shape)
+        if self.use_L:
+            trend = self.moving_avg(x_enc)  # [B, L, N]
+            seasonal = x_enc - trend  # [B, L, N]
+            trend_input = trend.permute(0, 2, 1)  # [B, N, L]
+            seasonal_input = seasonal.permute(0, 2, 1)  # [B, N, L]
+            pred_trend = self.trend_proj(trend_input)  # [B, N, pred_len]
+            pred_seasonal = self.seasonal_proj(seasonal_input)  # [B, N, pred_len]
+            linear_out = (pred_trend + pred_seasonal).permute(0, 2, 1)  # [B, pred_len, N]
             dec_out = self.revin_layer(dec_out[:, -self.pred_len:, :] + self.w_dec * linear_out,
-                                       'denorm')  # [batch_size,seq_len,enc_in][32, 96, 7]
+                                       'denorm')  #[batch_size,seq_len,enc_in][32, 96, 7]
             if self.log_prem:
-                logger.info("dec_out, {dec_out.shape}")
-                logger.info("linear_out, {linear_out.shape}")
+                logger.info("dec_out", dec_out.shape)
+                logger.info("linear_out", linear_out.shape)
         else:
             dec_out = self.revin_layer(dec_out[:, -self.pred_len:, :],
-                                       'denorm')  # [batch_size,seq_len,enc_in][32, 96, 7]
+                                       'denorm')  #[batch_size,seq_len,enc_in][32, 96, 7]
             if self.log_prem:
-                logger.info("dec_out, {dec_out.shape}")
+                logger.info("dec_out", dec_out.shape)
         self.log_prem = False
         if self.output_attention:
             return dec_out[:, -self.pred_len:, :], attns
         else:
             return dec_out
+
+    def moving_avg(self, x):
+        """x: [B, L, N]"""
+        B, L, N = x.shape
+        x = x.permute(0, 2, 1).contiguous()  # [B, N, L]
+        x = x.view(B * N, L)
+        pad_len = self.kernel_size - 1
+        if pad_len > 0:
+            x = torch.nn.functional.pad(x, (pad_len, 0), mode='replicate')
+        avg = torch.nn.functional.avg_pool1d(x, kernel_size=self.kernel_size, stride=1)
+        avg = avg.view(B, N, -1).permute(0, 2, 1)  # [B, L_out, N]
+        if avg.shape[1] != L:
+            avg = torch.nn.functional.interpolate(avg.permute(0, 2, 1), size=L, mode='linear', align_corners=False)
+            avg = avg.permute(0, 2, 1)
+        return avg
