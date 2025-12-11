@@ -178,6 +178,7 @@ class Model(nn.Module):
                 nn.GELU(),
                 nn.Dropout(configs.dropout),
                 nn.Linear(self.seq_len * 2, self.pred_len)
+
             )
             self.seasonal_proj = nn.Sequential(
                 nn.Linear(self.seq_len, self.seq_len * 2),
@@ -234,8 +235,7 @@ class Model(nn.Module):
             trend_input = trend.permute(0, 2, 1)
             seasonal_input = seasonal.permute(0, 2, 1)
             pred_trend = self.trend_proj(trend_input)
-            pred_seasonal = self.seasonal_proj(seasonal_input)
-            linear_out = (pred_trend + pred_seasonal).permute(0, 2, 1)
+            linear_out = pred_trend.permute(0, 2, 1)
 
             dec_out = self.revin_layer(dec_out[:, -self.pred_len:, :] + self.w_dec * linear_out, 'denorm')
 
