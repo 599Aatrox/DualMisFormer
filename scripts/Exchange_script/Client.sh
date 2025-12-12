@@ -1,100 +1,98 @@
 export CUDA_VISIBLE_DEVICES=0
 
 model_name=Client
-seq_length=336
 
 python -u run.py \
   --task_name long_term_forecast \
   --is_training 1 \
-  --root_path ./dataset/weather/ \
-  --data_path weather.csv \
-  --model_id weather_336_96 \
+  --root_path ./dataset/exchange_rate/ \
+  --data_path exchange_rate.csv \
+  --model_id Exchange_336_96 \
   --model $model_name \
   --data custom \
   --features M \
-  --seq_len $seq_length \
+  --seq_len 336 \
   --pred_len 96 \
   --e_layers 3 \
   --d_layers 1 \
   --factor 3 \
-  --enc_in 21 \
-  --dec_in 21 \
-  --c_out 21 \
+  --enc_in 8 \
+  --dec_in 8 \
+  --c_out 8 \
   --d_model 768 \
   --d_ff 1024 \
-  --learning_rate 0.0005 \
   --des 'Exp' \
+  --learning_rate 0.00005 \
   --itr 1
 
 python -u run.py \
   --task_name long_term_forecast \
   --is_training 1 \
-  --root_path ./dataset/weather/ \
-  --data_path weather.csv \
-  --model_id weather_336_192 \
+  --root_path ./dataset/exchange_rate/ \
+  --data_path exchange_rate.csv \
+  --model_id Exchange_336_96 \
   --model $model_name \
   --data custom \
   --features M \
-  --seq_len $seq_length \
+  --seq_len 336 \
+  --label_len 48 \
   --pred_len 192 \
   --e_layers 3 \
   --d_layers 1 \
   --factor 3 \
-  --enc_in 21 \
-  --dec_in 21 \
-  --c_out 21 \
+  --enc_in 8 \
+  --dec_in 8 \
+  --c_out 8 \
   --d_model 768 \
   --d_ff 1024 \
   --des 'Exp' \
-  --learning_rate 0.0005 \
-  --itr 1 \
-  --train_epochs 10
-
-
-python -u run.py \
-  --task_name long_term_forecast \
-  --is_training 1 \
-  --root_path ./dataset/weather/ \
-  --data_path weather.csv \
-  --model_id weather_336_336 \
-  --model $model_name \
-  --data custom \
-  --features M \
-  --seq_len $seq_length \
-  --pred_len 336 \
-  --e_layers 3 \
-  --d_layers 1 \
-  --factor 3 \
-  --enc_in 21 \
-  --dec_in 21 \
-  --c_out 21 \
-  --d_model 768 \
-  --d_ff 1024 \
-  --des 'Exp' \
-  --learning_rate 0.0005 \
+  --learning_rate 0.00005 \
   --itr 1
 
 python -u run.py \
   --task_name long_term_forecast \
   --is_training 1 \
-  --root_path ./dataset/weather/ \
-  --data_path weather.csv \
-  --model_id weather_336_720 \
+  --root_path ./dataset/exchange_rate/ \
+  --data_path exchange_rate.csv \
+  --model_id Exchange_96_336 \
   --model $model_name \
   --data custom \
   --features M \
-  --seq_len $seq_length \
+  --seq_len 336 \
+  --label_len 48 \
+  --pred_len 336 \
+  --e_layers 3 \
+  --d_layers 1 \
+  --factor 3 \
+  --enc_in 8 \
+  --dec_in 8 \
+  --c_out 8 \
+  --d_model 768 \
+  --d_ff 1024 \
+  --des 'Exp' \
+  --learning_rate 0.0001 \
+  --itr 1 
+
+python -u run.py \
+  --task_name long_term_forecast \
+  --is_training 1 \
+  --root_path ./dataset/exchange_rate/ \
+  --data_path exchange_rate.csv \
+  --model_id Exchange_96_720 \
+  --model $model_name \
+  --data custom \
+  --features M \
+  --seq_len 336 \
+  --label_len 48 \
   --pred_len 720 \
   --e_layers 3 \
   --d_layers 1 \
   --factor 3 \
-  --enc_in 21 \
-  --dec_in 21 \
-  --c_out 21 \
+  --enc_in 8 \
+  --dec_in 8 \
+  --c_out 8 \
   --d_model 768 \
   --d_ff 1024 \
   --des 'Exp' \
-  --itr 1 \
-  --learning_rate 0.0005 \
-  --train_epochs 10
-
+  --learning_rate 0.00005 \
+  --itr 1

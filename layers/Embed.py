@@ -1,8 +1,7 @@
+import math
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.nn.utils import weight_norm
-import math
 
 
 class PositionalEmbedding(nn.Module):
@@ -204,6 +203,6 @@ class DataEmbedding_inverted(nn.Module):
         else:
             # the potential to take covariates (e.g. timestamps) as tokens
             # 如果有时间标记，将输入数据和时间标记拼接后进行嵌入
-            x = self.value_embedding(torch.cat([x, x_mark.permute(0, 2, 1)], 1))
+            x = self.value_embedding(x)
         # x: [Batch Variate d_model]
         return self.dropout(x)  # 应用dropout并返回结果

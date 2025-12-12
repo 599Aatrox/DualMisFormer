@@ -5,10 +5,10 @@ seq_len_input=336          # 固定输入长度为 96
 pred_lengths=(96 192 336 720)
 
 # 安全配置（适合 12~24GB GPU）
-d_model=384
-d_ff=1536                 # ≈ 4 * 384
-batch_size=16
-learning_rate=0.001
+d_model=768
+d_ff=1024              # ≈ 4 * 384
+batch_size=8
+learning_rate=0.0005
 dropout=0.1
 
 for pred_len in "${pred_lengths[@]}"; do
@@ -42,7 +42,7 @@ for pred_len in "${pred_lengths[@]}"; do
       --embed timeF \
       --batch_size $batch_size \
       --learning_rate $learning_rate \
-      --train_epochs 20 \
+      --train_epochs 10 \
       --itr 1 \
       --use_gpu True \
 done

@@ -10,13 +10,14 @@ python -u run.py \
   --task_name long_term_forecast \
   --is_training 1 \
   --root_path ./dataset/ETT-small/ \
-  --data_path ETTm2.csv \
-  --model_id ETTm2_336_96 \
+  --data_path ETTh2.csv \
+  --model_id ETTh2_336_96 \
   --model $model_name \
-  --data ETTm2 \
+  --data ETTh2 \
   --features M \
   --seq_len 336 \
   --pred_len 96 \
+  --freq h\
   --e_layers 3 \
   --d_layers 1 \
   --factor 3 \
@@ -37,14 +38,15 @@ python -u run.py \
   --task_name long_term_forecast \
   --is_training 1 \
   --root_path ./dataset/ETT-small/ \
-  --data_path ETTm2.csv \
-  --model_id ETTm2_336_192 \
+  --data_path ETTh2.csv \
+  --model_id ETTh2_336_192 \
   --model $model_name \
-  --data ETTm2 \
+  --data ETTh2 \
   --features M \
   --seq_len 336 \
   --label_len 48 \
   --pred_len 192 \
+  --freq h\
   --e_layers 3 \
   --d_layers 1 \
   --factor 3 \
@@ -64,14 +66,15 @@ python -u run.py \
   --task_name long_term_forecast \
   --is_training 1 \
   --root_path ./dataset/ETT-small/ \
-  --data_path ETTm2.csv \
-  --model_id ETTm2_336_336 \
+  --data_path ETTh2.csv \
+  --model_id ETTh2_336_336 \
   --model $model_name \
-  --data ETTm2 \
+  --data ETTh2 \
   --features M \
   --seq_len 336 \
   --label_len 48 \
   --pred_len 336 \
+  --freq h\
   --e_layers 3 \
   --d_layers 1 \
   --factor 3 \
@@ -92,14 +95,15 @@ python -u run.py \
   --task_name long_term_forecast \
   --is_training 1 \
   --root_path ./dataset/ETT-small/ \
-  --data_path ETTm2.csv \
-  --model_id ETTm2_336_720 \
+  --data_path ETTh2.csv \
+  --model_id ETTh2_336_720 \
   --model $model_name \
-  --data ETTm2 \
+  --data ETTh2 \
   --features M \
   --seq_len 336 \
   --label_len 48 \
   --pred_len 720 \
+  --freq h\
   --e_layers 3 \
   --d_layers 1 \
   --factor 3 \
