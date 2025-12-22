@@ -34,6 +34,7 @@ class Model(nn.Module):
         # todo: d_model 最好是256但是作者给直接和seq_len一样了
         # configs.d_model = configs.seq_len
 
+
         self.seq_len = configs.seq_len
         # self.use_norm = configs.use_norm
         self.d_model = configs.d_model
@@ -41,6 +42,7 @@ class Model(nn.Module):
         self.enc_in = configs.enc_in
         self.use_ME = configs.use_ME  # 使用多嵌入
         self.use_L = configs.use_L  # 使用使用线性分支
+        self.use_T = configs.use_T
         self.enc_embedding = DataEmbedding_inverted(configs.seq_len, configs.d_model, configs.embed, configs.freq,
                                                     configs.dropout)
 
@@ -125,14 +127,16 @@ class Model(nn.Module):
             x3 = self.GeLU(x3)
             x3 = self.Hidden1(x3)
             linear_out = x3.permute(0, 2, 1)
-
-            dec_out = self.revin_layer(dec_out[:, -self.pred_len:, :] + self.w_dec * linear_out, 'denorm')
+            if self.use_T:
+                dec_out = self.revin_layer(dec_out[:, -self.pred_len:, :] + self.w_dec * linear_out, 'denorm')  # 混合输出
+            else:
+                dec_out = self.revin_layer(linear_out, 'denorm')  #只有线性分支输出
 
             if self.log_prem:
                 logger.info(f"Linear output shape: {linear_out.shape}")
                 logger.info(f"Final decoder output shape: {dec_out.shape}")
         else:
-            dec_out = self.revin_layer(dec_out[:, -self.pred_len:, :], 'denorm')
+            dec_out = self.revin_layer(dec_out[:, -self.pred_len:, :], 'denorm')  #只有Transformer分支输出
         # 只在第一次前向传播时记录日志
         self.log_prem = False
 

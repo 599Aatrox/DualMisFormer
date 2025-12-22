@@ -3,10 +3,12 @@ import os
 import time
 import warnings
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
 from torch import optim
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
@@ -45,7 +47,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         return data_set, data_loader
 
     def _select_optimizer(self):
-        model_optim = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
+        model_optim = optim.AdamW(self.model.parameters(), lr=self.args.learning_rate)
         return model_optim
 
     def _select_criterion(self):
@@ -113,6 +115,8 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
         model_optim = self._select_optimizer()
         criterion = self._select_criterion()
+
+        scheduler = CosineAnnealingLR(model_optim, T_max=self.args.train_epochs)
 
         if self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
@@ -193,7 +197,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 print("Early stopping")
                 break
 
-            #adjust_learning_rate(model_optim, epoch + 1, self.args)
+            # adjust_learning_rate(model_optim, epoch + 1, self.args)
+            # 更新学习率
+            scheduler.step()
 
         best_model_path = path + '/' + 'checkpoint.pth'
         self.model.load_state_dict(torch.load(best_model_path))
@@ -217,6 +223,8 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark,batch_cycle) in enumerate(test_loader):
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float().to(self.device)
+                if self.args.use_mask:
+                    batch_x, _ = self._maybe_apply_input_mask(batch_x, self.args.mask_ratio)  #鲁棒性实验
 
                 batch_x_mark = batch_x_mark.float().to(self.device)
                 batch_y_mark = batch_y_mark.float().to(self.device)
@@ -229,19 +237,31 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
                         if self.args.output_attention:
-                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark,batch_cycle)[0]
+                            outputs, attns = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, batch_cycle)
                         else:
-                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark,batch_cycle)
+                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, batch_cycle)
+                            attns = None
+
                 else:
                     if self.args.output_attention:
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark,batch_cycle)[0]
-
+                        outputs, attns = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, batch_cycle)
                     else:
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark,batch_cycle)
+                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, batch_cycle)
+                        attns = None
 
                 f_dim = -1 if self.args.features == 'MS' else 0
                 outputs = outputs[:, -self.args.pred_len:, f_dim:]
                 batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+                # 只保存第一个 batch 的注意力图，避免输出太多
+                if self.args.output_attention and (i % 100 == 0):
+                    name = "attn_heatmap_layer-" + str(i) + ".png"
+                    save_attn_heatmap(
+                        attns,
+                        save_path=os.path.join(folder_path, name),
+                        layer=-1,
+                        mean_heads=True
+                    )
+
                 outputs = outputs.detach().cpu().numpy()
                 batch_y = batch_y.detach().cpu().numpy()
 
@@ -285,3 +305,53 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         np.save(folder_path + 'true.npy', trues)
 
         return
+
+    def _maybe_apply_input_mask(self, batch_x, mask_ratio):
+        rate = mask_ratio
+        if rate <= 0:
+            return batch_x, None
+
+        # 可选：保证可复现
+        seed = 2021
+        if seed is not None:
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+
+        mask = (torch.rand(batch_x.shape, device=batch_x.device) > rate).float()
+
+        fill = getattr(self.args, "robust_mask_fill", "zero")  # "zero" or "mean"
+        if fill == "mean":
+            mean_val = batch_x.mean(dim=1, keepdim=True)  # [B,1,N]
+            batch_x = batch_x * mask + mean_val * (1 - mask)
+        else:
+            batch_x = batch_x * mask  # 等价于 masked_fill 为0
+
+        return batch_x, mask
+
+
+def save_attn_heatmap(attns, save_path, layer=-1, head=0, batch_idx=0, mean_heads=True):
+    """
+    attns: 通常是 list，长度=层数；每层形状常见 [B, H, Q, K] 或 [B, Q, K]
+    """
+    a = attns[layer] if isinstance(attns, (list, tuple)) else attns
+    if isinstance(a, (list, tuple)):
+        a = a[0]
+
+    if a.dim() == 4:  # [B,H,Q,K]
+        a = a[batch_idx].mean(dim=0) if mean_heads else a[batch_idx, head]
+    elif a.dim() == 3:  # [B,Q,K]
+        a = a[batch_idx]
+    else:
+        raise ValueError(f"Unexpected attn shape: {tuple(a.shape)}")
+
+    mat = a.detach().cpu().float().numpy()
+
+    plt.figure(figsize=(6, 5))
+    plt.imshow(mat, aspect="auto")
+    plt.colorbar()
+    plt.title(f"Attn layer={layer}, {'mean' if mean_heads else f'head={head}'}")
+    plt.xlabel("Key")
+    plt.ylabel("Query")
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=200)
+    plt.close()

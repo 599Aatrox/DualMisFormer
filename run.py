@@ -1,14 +1,17 @@
 import argparse
+import logging
 import os
+import random
+
+import numpy as np
 import torch
-from exp.exp_long_term_forecasting import Exp_Long_Term_Forecast
-from exp.exp_imputation import Exp_Imputation
-from exp.exp_short_term_forecasting import Exp_Short_Term_Forecast
+
 from exp.exp_anomaly_detection import Exp_Anomaly_Detection
 from exp.exp_classification import Exp_Classification
-import random
-import numpy as np
-import logging
+from exp.exp_imputation import Exp_Imputation
+from exp.exp_long_term_forecasting import Exp_Long_Term_Forecast
+from exp.exp_short_term_forecasting import Exp_Short_Term_Forecast
+
 os.makedirs("logs", exist_ok=True)
 
 # 配置日志
@@ -55,7 +58,7 @@ if __name__ == '__main__':
     parser.add_argument('--seasonal_patterns', type=str, default='Monthly', help='subset for M4')
 
     # inputation task
-    # parser.add_argument('--mask_rate', type=float, default=0.25, help='mask ratio')
+    parser.add_argument('--mask_rate', type=float, default=0.25, help='mask ratio')
 
     # anomaly detection task
     parser.add_argument('--anomaly_ratio', type=float, default=0.25, help='prior anomaly ratio (%)')
@@ -83,6 +86,10 @@ if __name__ == '__main__':
     parser.add_argument('--output_attention', action='store_true', help='whether to output attention in ecoder')
     parser.add_argument('--cycle_len',type=int, default=96, help='cycle length for TimesNet')
     parser.add_argument('--use_L',default=1,type=int, help='use Linear in Client ')
+    parser.add_argument('--use_ME', default=1, type=int, help='use Linear in Client ')
+    parser.add_argument('--use_R', default=1, type=int, help='use Linear in Client ')
+    parser.add_argument('--use_T', default=1, type=int, help='use Linear in Client ')
+    parser.add_argument('--use_mask', default=0, type=int, help='use Linear in Client ')
 
     # optimization
     parser.add_argument('--num_workers', type=int, default=10, help='data loader num workers')
