@@ -64,10 +64,8 @@ class Model(nn.Module):
         if self.use_ME:
             self.channel_embedding = nn.Parameter(torch.zeros(configs.enc_in, configs.d_model))
             self.phase_embedding = nn.Embedding(self.cycle_len, configs.d_model)
-            self.joint_embedding = nn.Embedding(self.cycle_len, self.enc_in * self.d_model)
             nn.init.xavier_normal_(self.phase_embedding.weight)
             nn.init.xavier_normal_(self.joint_embedding.weight)
-            nn.init.xavier_normal_(self.channel_embedding)
 
         self.projector = nn.Sequential(
             nn.Linear(configs.d_model, configs.d_model * 2),
@@ -101,14 +99,12 @@ class Model(nn.Module):
         if self.use_ME:
             channel_emb = self.channel_embedding.expand(enc_out.shape[0], N, -1)  # [B, N, d_model]
             phase_emb = self.phase_embedding(phase.view(-1, 1).expand(B, N))  # [B, N, d_model]
-            joint_emb = self.joint_embedding(phase).reshape(B, self.enc_in, self.d_model)  # [B, N, d_model]
 
-            enc_out = enc_out[:, :N, :] + channel_emb + phase_emb + joint_emb  # [B, N, d_model]
+            enc_out = enc_out[:, :N, :] + channel_emb + phase_emb
 
             if self.log_prem:
                 logger.info(f"Channel embedding shape: {channel_emb.shape}")
                 logger.info(f"Phase embedding shape: {phase_emb.shape}")
-                logger.info(f"Joint embedding shape: {joint_emb.shape}")
                 logger.info(f"Final encoded output shape: {enc_out.shape}")
 
         enc_orgin = enc_out  # [B, N, d_model]
