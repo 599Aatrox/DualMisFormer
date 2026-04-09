@@ -64,6 +64,7 @@ class Model(nn.Module):
         if self.use_ME:
             self.channel_embedding = nn.Parameter(torch.zeros(configs.enc_in, configs.d_model))
             self.phase_embedding = nn.Embedding(self.cycle_len, configs.d_model)
+            self.joint_embedding = nn.Embedding(self.cycle_len, self.enc_in * self.d_model)
             nn.init.xavier_normal_(self.phase_embedding.weight)
             nn.init.xavier_normal_(self.joint_embedding.weight)
 
