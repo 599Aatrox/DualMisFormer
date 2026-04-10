@@ -24,9 +24,9 @@ python -u run.py \
   --dec_in 7 \
   --c_out 7 \
   --des 'Exp' \
-  --d_model 768 \
+  ----d_ff 256 \
   --n_heads 8 \
-  --d_ff 1024 \
+  --d_ff 512 \
   --batch_size $Batch_size \
   --learning_rate $LR \
   --train_epochs $EPOCHS \
@@ -52,12 +52,13 @@ python -u run.py \
   --dec_in 7 \
   --c_out 7 \
   --des 'Exp' \
-  --d_model 768 \
+  ----d_ff 256 \
   --n_heads 8 \
-  --d_ff 1024 \
+  --d_ff 512 \
   --batch_size 32 \
   --learning_rate $LR \
   --train_epochs $EPOCHS \
+
   --use_L 1 \
   --itr 1
 python -u run.py \
@@ -79,9 +80,9 @@ python -u run.py \
   --dec_in 7 \
   --c_out 7 \
   --des 'Exp' \
-  --d_model 768 \
+  ----d_ff 256 \
   --n_heads 8 \
-  --d_ff 1024 \
+  --d_ff 512 \
   --batch_size 32 \
   --learning_rate $LR \
   --train_epochs $EPOCHS \
@@ -107,9 +108,9 @@ python -u run.py \
   --dec_in 7 \
   --c_out 7 \
   --des 'Exp' \
-  --d_model 768 \
+  ----d_ff 256 \
   --n_heads 8 \
-  --d_ff 1024 \
+  --d_ff 512 \
   --batch_size 32 \
   --learning_rate $LR \
   --train_epochs $EPOCHS \
