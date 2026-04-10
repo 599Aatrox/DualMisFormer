@@ -24,7 +24,7 @@ python -u run.py \
   --dec_in 7 \
   --c_out 7 \
   --des 'Exp' \
-  --model 256 \
+  --d_model 256 \
   --n_heads 8 \
   --d_ff 512 \
   --batch_size $Batch_size \
@@ -52,7 +52,7 @@ python -u run.py \
   --dec_in 7 \
   --c_out 7 \
   --des 'Exp' \
-  --model 256 \
+  --d_model 256 \
   --n_heads 8 \
   --d_ff 512 \
   --batch_size 32 \
@@ -80,7 +80,7 @@ python -u run.py \
   --dec_in 7 \
   --c_out 7 \
   --des 'Exp' \
-  --model 256 \
+  --d_model 256 \
   --n_heads 8 \
   --d_ff 512 \
   --batch_size 32 \
@@ -108,7 +108,7 @@ python -u run.py \
   --dec_in 7 \
   --c_out 7 \
   --des 'Exp' \
-  --model 256 \
+  --d_model 256 \
   --n_heads 8 \
   --d_ff 512 \
   --batch_size 32 \
