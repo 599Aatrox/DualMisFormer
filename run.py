@@ -90,6 +90,12 @@ if __name__ == '__main__':
     parser.add_argument('--use_R', default=1, type=int, help='use Linear in Client ')
     parser.add_argument('--use_T', default=1, type=int, help='use Linear in Client ')
     parser.add_argument('--use_mask', default=0, type=int, help='use Linear in Client ')
+    parser.add_argument('--ms_scales', type=str, default='1,2,4')
+    parser.add_argument('--low_kernels', type=str, default='5,13,25')
+    parser.add_argument('--rel_rank', type=int, default=16)
+    parser.add_argument('--temp_kernel', type=int, default=3)
+    parser.add_argument('--smooth_loss_weight', type=float, default=0.0)
+
 
     # optimization
     parser.add_argument('--num_workers', type=int, default=10, help='data loader num workers')
